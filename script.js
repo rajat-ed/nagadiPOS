@@ -267,6 +267,8 @@ function filterTransactionsByRange(range) {
     switch (range) {
         case 'last':
             return transactions.slice(0, 1);
+        case 'last10':
+            return transactions.slice(0, 10);
         case '1day':
             cutoff = new Date(now.setDate(now.getDate() - 1));
             break;
