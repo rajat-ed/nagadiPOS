@@ -24,34 +24,34 @@
                 <div id="products" class="grid"></div>
             </section>
 
-            <!-- Cart and Settings -->
+            <!-- Cart, Settings, and Sale Summary -->
             <section id="cart-settings">
                 <!-- Tabs -->
                 <div class="tabs">
                     <button class="tab-btn active" onclick="showTab('cart-tab')">Cart</button>
                     <button class="tab-btn" onclick="showTab('settings-tab')">Settings</button>
+                    <button class="tab-btn" onclick="showTab('summary-tab')">Sale Summary</button>
                 </div>
 
                 <!-- Cart Tab -->
                 <div id="cart-tab" class="tab-content active">
                     <h2>Current Sale</h2>
                     <ul id="cart-items"></ul>
-                    <p>Total: <span id="currency">$</span><span id="cart-total">0.00</span></p>
+                    <p>Total: <span id="currency">Rs.</span><span id="cart-total">0.00</span></p>
                     <div class="cart-buttons">
-                        <button onclick="startCheckout()">Checkout</button>
+                        <button id="checkout-btn" onclick="startCheckout()" disabled>Checkout</button>
                         <button onclick="clearCart()">Clear Cart</button>
                     </div>
                     <div id="checkout-panel" class="checkout-panel" style="display: none;">
                         <h3>Checkout</h3>
                         <p id="checkout-items"></p>
-                        <p>Total: <span id="checkout-total-currency">$</span><span id="checkout-total">0.00</span></p>
-                        <button id="confirm-items-btn" onclick="confirmItems()">Confirm Items</button>
-                        <div id="payment-section" style="display: none;">
+                        <p>Total: <span id="checkout-total-currency">Rs.</span><span id="checkout-total">0.00</span></p>
+                        <div id="payment-section">
                             <label for="paid-amount">Amount Paid:</label>
                             <input type="number" id="paid-amount" step="0.01" placeholder="Enter amount">
                             <span id="payment-error" class="error" style="display: none;">Paid amount must be at least the total.</span>
-                            <p>Change: <span id="change-currency">$</span><span id="change-amount">0.00</span></p>
-                            <button onclick="completeCheckout()">Complete Checkout</button>
+                            <p>Change: <span id="change-currency">Rs.</span><span id="change-amount">0.00</span></p>
+                            <button id="complete-checkout-btn" onclick="completeCheckout()" disabled>Complete Checkout</button>
                         </div>
                     </div>
                 </div>
@@ -62,8 +62,6 @@
                     <div class="settings-form">
                         <label>Business Name:</label>
                         <input type="text" id="business-name" placeholder="Enter business name">
-                        <label>Currency Symbol:</label>
-                        <input type="text" id="currency-symbol" placeholder="e.g., $">
                         <label>Add Product:</label>
                         <input type="text" id="product-name" placeholder="Product Name">
                         <input type="number" id="product-price" placeholder="Price" step="0.01">
@@ -75,7 +73,33 @@
                         <button onclick="removeProduct()">Remove</button>
                         <label>Logo:</label>
                         <input type="file" id="logo-upload" accept="image/*" onchange="uploadLogo()">
+                        <label>Clear Sessions:</label>
+                        <button onclick="clearSessions()">Clear All Sessions</button>
                     </div>
+                </div>
+
+                <!-- Sale Summary Tab -->
+                <div id="summary-tab" class="tab-content">
+                    <h2>Sale Summary</h2>
+                    <div class="summary-controls">
+                        <select id="summary-range">
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                        <button onclick="viewSaleSummary()">View Summary</button>
+                        <button onclick="exportSaleSummary()">Export Summary</button>
+                    </div>
+                    <table id="summary-table" class="session-table">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Qty Sold</th>
+                                <th>Total Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="summary-list"></tbody>
+                    </table>
+                    <p id="summary-total" style="display: none;">Total Sales: Rs.<span id="summary-total-amount">0.00</span> | Transactions: <span id="summary-transactions">0</span></p>
                 </div>
             </section>
         </div>
@@ -83,22 +107,10 @@
         <!-- Transaction History -->
         <section id="history">
             <h2>Transaction History</h2>
-            <table id="transaction-table">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Items</th>
-                        <th>Total</th>
-                        <th>Paid</th>
-                        <th>Change</th>
-                    </tr>
-                </thead>
-                <tbody id="transaction-list"></tbody>
-            </table>
+            <div id="session-container"></div>
             <div class="history-buttons">
                 <select id="export-range">
                     <option value="last">Last Bill</option>
-                    <option value="last">Last 10</option>
                     <option value="1day">1 Day</option>
                     <option value="1week">1 Week</option>
                     <option value="1month">1 Month</option>
@@ -109,6 +121,7 @@
                 <button onclick="exportBillsByRange()">Export Bills</button>
             </div>
         </section>
+
         <footer class="footer-right">
             <p>NagadiPOS by Rajat</p>
         </footer>
