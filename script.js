@@ -1,14 +1,36 @@
 // Initialize data from localStorage or set defaults
 let products = JSON.parse(localStorage.getItem('products')) || [];
 let cart = [];
-let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+let sessions = []; // Reset on refresh, not loaded from localStorage initially
 let settings = JSON.parse(localStorage.getItem('settings')) || {
     businessName: '',
-    currency: '$'
+    currency: 'Rs.'
 };
+let userName = null; // Reset on refresh
 
-// Load data on page load
+// Unique colors for products
+const productColors = [
+    { bg: '#ff6b6b', fg: '#fff' },  // Red
+    { bg: '#4ecdc4', fg: '#000' },  // Teal
+    { bg: '#f7d794', fg: '#000' },  // Yellow
+    { bg: '#45b7d1', fg: '#fff' },  // Blue
+    { bg: '#96ceb4', fg: '#000' },  // Green
+    { bg: '#ffeead', fg: '#000' },  // Light Yellow
+    { bg: '#d4a5a5', fg: '#000' },  // Pink
+    { bg: '#9b59b6', fg: '#fff' },  // Purple
+    { bg: '#e74c3c', fg: '#fff' },  // Dark Red
+    { bg: '#3498db', fg: '#fff' }   // Dark Blue
+];
+
+// Handle refresh: reset sessions and userName, preserve other data
 document.addEventListener('DOMContentLoaded', () => {
+    // Reset sessions and userName on every refresh
+    sessions = [];
+    localStorage.setItem('sessions', JSON.stringify(sessions));
+    userName = prompt('Please enter your name:') || 'User';
+    localStorage.setItem('userName', userName);
+
+    // Load persistent data
     loadProducts();
     loadHistory();
     loadLogo();
@@ -39,9 +61,9 @@ function addProduct() {
 function loadProducts() {
     const grid = document.getElementById('products');
     grid.innerHTML = '';
-    products.forEach((product) => {
+    products.forEach((product, index) => {
         const div = document.createElement('div');
-        div.className = 'product-item';
+        div.className = `product-item color-${(index % productColors.length) + 1}`;
         div.textContent = `${product.name}\n${settings.currency}${product.price.toFixed(2)}`;
         div.onclick = () => addToCart(product);
         grid.appendChild(div);
@@ -60,9 +82,10 @@ function updateCart() {
     cartItems.innerHTML = '';
     let total = 0;
 
-    cart.forEach((item) => {
+    cart.forEach((item, index) => {
         total += item.price;
         const li = document.createElement('li');
+        li.className = `color-${(products.findIndex(p => p.name === item.name) % productColors.length) + 1}`;
         li.textContent = `${item.name} - ${settings.currency}${item.price.toFixed(2)}`;
         cartItems.appendChild(li);
     });
@@ -70,14 +93,12 @@ function updateCart() {
     document.getElementById('cart-total').textContent = total.toFixed(2);
     document.getElementById('currency').textContent = settings.currency;
     document.getElementById('checkout-panel').style.display = 'none';
+    document.getElementById('checkout-btn').disabled = cart.length === 0;
 }
 
 // Start checkout process
 function startCheckout() {
-    if (cart.length === 0) {
-        alert('Cart is empty!');
-        return;
-    }
+    if (cart.length === 0) return;
 
     const total = cart.reduce((sum, item) => sum + item.price, 0);
     const itemList = cart.map(item => `${item.name} - ${settings.currency}${item.price.toFixed(2)}`).join('\n');
@@ -86,34 +107,33 @@ function startCheckout() {
     document.getElementById('checkout-items').textContent = itemList;
     document.getElementById('checkout-total').textContent = total.toFixed(2);
     document.getElementById('checkout-total-currency').textContent = settings.currency;
-    document.getElementById('payment-section').style.display = 'none';
-    document.getElementById('confirm-items-btn').style.display = 'block';
-    checkoutPanel.style.display = 'block';
-}
-
-// Confirm items and show payment section
-function confirmItems() {
-    document.getElementById('payment-section').style.display = 'block';
-    document.getElementById('confirm-items-btn').style.display = 'none';
     document.getElementById('paid-amount').value = '';
     document.getElementById('change-amount').textContent = '0.00';
     document.getElementById('change-currency').textContent = settings.currency;
     document.getElementById('payment-error').style.display = 'none';
+    document.getElementById('complete-checkout-btn').disabled = true;
+    checkoutPanel.style.display = 'block';
 }
 
-// Calculate change and show error if paid < total
+// Calculate change and enable checkout button
 function calculateChange() {
     const total = parseFloat(document.getElementById('checkout-total').textContent) || 0;
     const paid = parseFloat(document.getElementById('paid-amount').value) || 0;
     const change = paid - total;
     const errorElement = document.getElementById('payment-error');
+    const completeBtn = document.getElementById('complete-checkout-btn');
 
     document.getElementById('change-amount').textContent = change >= 0 ? change.toFixed(2) : '0.00';
     
     if (paid < total && paid > 0) {
         errorElement.style.display = 'block';
+        completeBtn.disabled = true;
+    } else if (paid >= total) {
+        errorElement.style.display = 'none';
+        completeBtn.disabled = false;
     } else {
         errorElement.style.display = 'none';
+        completeBtn.disabled = true;
     }
 }
 
@@ -134,11 +154,18 @@ function completeCheckout() {
         total: total,
         paid: paid,
         change: change,
-        businessName: settings.businessName || 'NagadiPOS'
+        businessName: settings.businessName || 'NagadiPOS',
+        cashier: userName
     };
 
-    transactions.unshift(transaction);
-    localStorage.setItem('transactions', JSON.stringify(transactions));
+    const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const businessName = settings.businessName || 'NagadiPOS';
+    const sessionNumber = String(sessions.length + 1).padStart(4, '0');
+    const sessionId = `${dateStr}_${businessName}_${userName}_${sessionNumber}`;
+    const currentSession = sessions.length > 0 && sessions[0].transactions.length < 10 ? sessions[0] : { sessionId, transactions: [] };
+    currentSession.transactions.unshift(transaction);
+    if (!sessions.includes(currentSession)) sessions.unshift(currentSession);
+    localStorage.setItem('sessions', JSON.stringify(sessions));
     
     cart = [];
     updateCart();
@@ -151,33 +178,72 @@ function clearCart() {
     updateCart();
 }
 
-// Helper function to format items with counts
+// Clear all sessions
+function clearSessions() {
+    if (confirm('Are you sure you want to clear all sessions? This action cannot be undone.')) {
+        sessions = [];
+        localStorage.setItem('sessions', JSON.stringify(sessions));
+        loadHistory();
+    }
+}
+
+// Helper function to format items with counts and totals
 function formatItems(items) {
     const itemCount = {};
     items.forEach(item => {
         const key = `${item.name} - ${settings.currency}${item.price.toFixed(2)}`;
-        itemCount[key] = (itemCount[key] || 0) + 1;
+        itemCount[key] = (itemCount[key] || { count: 0, total: 0 });
+        itemCount[key].count += 1;
+        itemCount[key].total += item.price;
     });
-    return Object.entries(itemCount).map(([item, count]) => 
-        count > 1 ? `${item} (x${count})` : item
+    return Object.entries(itemCount).map(([item, { count, total }]) => 
+        count > 1 ? `${item} (x${count} - ${settings.currency}${total.toFixed(2)})` : item
     ).join('\n');
 }
 
-// Load transaction history as table
+// Load transaction history by sessions
 function loadHistory() {
-    const transactionList = document.getElementById('transaction-list');
-    transactionList.innerHTML = '';
+    const sessionContainer = document.getElementById('session-container');
+    sessionContainer.innerHTML = '';
 
-    transactions.forEach((transaction) => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${transaction.date}</td>
-            <td>${formatItems(transaction.items)}</td>
-            <td>${settings.currency}${transaction.total.toFixed(2)}</td>
-            <td>${settings.currency}${transaction.paid.toFixed(2)}</td>
-            <td>${settings.currency}${transaction.change.toFixed(2)}</td>
+    sessions.forEach((session) => {
+        const sessionDiv = document.createElement('div');
+        sessionDiv.className = 'session';
+        sessionDiv.innerHTML = `
+            <h3>${session.sessionId}</h3>
+            <table class="session-table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Paid</th>
+                        <th>Change</th>
+                        <th>Cashier</th>
+                    </tr>
+                </thead>
+                <tbody id="session-${session.sessionId}"></tbody>
+            </table>
+            <div class="session-buttons">
+                <button onclick="exportSession('${session.sessionId}')">Export Session</button>
+            </div>
         `;
-        transactionList.appendChild(tr);
+
+        const tbody = sessionDiv.querySelector(`#session-${session.sessionId}`);
+        session.transactions.forEach((transaction) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${transaction.date}</td>
+                <td>${formatItems(transaction.items)}</td>
+                <td>${settings.currency}${transaction.total.toFixed(2)}</td>
+                <td>${settings.currency}${transaction.paid.toFixed(2)}</td>
+                <td>${settings.currency}${transaction.change.toFixed(2)}</td>
+                <td>${transaction.cashier}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        sessionContainer.appendChild(sessionDiv);
     });
 }
 
@@ -233,17 +299,14 @@ function loadLogo() {
 // Load and save settings
 function loadSettings() {
     document.getElementById('business-name').value = settings.businessName;
-    document.getElementById('currency-symbol').value = settings.currency;
     document.getElementById('business-title').textContent = settings.businessName ? `${settings.businessName} NagadiPOS` : 'NagadiPOS';
     loadRemoveProductOptions();
 
     document.getElementById('business-name').addEventListener('change', saveSettings);
-    document.getElementById('currency-symbol').addEventListener('change', saveSettings);
 }
 
 function saveSettings() {
     settings.businessName = document.getElementById('business-name').value.trim();
-    settings.currency = document.getElementById('currency-symbol').value.trim() || '$';
     localStorage.setItem('settings', JSON.stringify(settings));
     document.getElementById('business-title').textContent = settings.businessName ? `${settings.businessName} NagadiPOS` : 'NagadiPOS';
     updateCart();
@@ -263,12 +326,11 @@ function showTab(tabId) {
 function filterTransactionsByRange(range) {
     const now = new Date();
     let cutoff;
+    const allTransactions = sessions.flatMap(session => session.transactions);
 
     switch (range) {
         case 'last':
-            return transactions.slice(0, 1);
-        case 'last10':
-            return transactions.slice(0, 10);
+            return allTransactions.slice(0, 1);
         case '1day':
             cutoff = new Date(now.setDate(now.getDate() - 1));
             break;
@@ -288,19 +350,33 @@ function filterTransactionsByRange(range) {
             cutoff = new Date(now.setFullYear(now.getFullYear() - 1));
             break;
         default:
-            return transactions;
+            return allTransactions;
     }
 
-    return transactions.filter(t => new Date(t.date) >= cutoff);
+    return allTransactions.filter(t => new Date(t.date) >= cutoff);
 }
 
-// Export bills by selected range
+// Export bills by range
 function exportBillsByRange() {
     const range = document.getElementById('export-range').value;
     const filteredTransactions = filterTransactionsByRange(range);
+    exportToPDF(filteredTransactions, `NagadiPOS_${range === 'last' ? 'Last_Bill' : range.replace(/(\d+)(\w+)/, '$1_$2')}`);
+}
 
-    if (filteredTransactions.length === 0) {
-        alert('No transactions in the selected range!');
+// Export bills for a specific session
+function exportSession(sessionId) {
+    const session = sessions.find(s => s.sessionId === sessionId);
+    if (session && session.transactions.length > 0) {
+        exportToPDF(session.transactions, `NagadiPOS_Session_${sessionId}`);
+    } else {
+        alert('No transactions in this session!');
+    }
+}
+
+// Professional shopping mall bill format
+function exportToPDF(transactions, filename) {
+    if (transactions.length === 0) {
+        alert('No transactions to export!');
         return;
     }
 
@@ -312,66 +388,219 @@ function exportBillsByRange() {
     });
     let y = 10;
 
-    filteredTransactions.forEach((transaction, index) => {
-        if (y > 280) {
+    transactions.forEach((transaction, index) => {
+        const itemCount = {};
+        transaction.items.forEach(item => {
+            const key = `${item.name}`;
+            itemCount[key] = (itemCount[key] || { count: 0, price: item.price, total: 0 });
+            itemCount[key].count += 1;
+            itemCount[key].total += item.price;
+        });
+        const itemLines = Object.keys(itemCount).length;
+        const billHeightEstimate = 30 + (itemLines * 5) + 25;
+
+        if (y + billHeightEstimate > 280) {
             doc.addPage();
             y = 10;
         }
 
         // Header
-        doc.setFontSize(12);
+        doc.setFontSize(14);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0, 0, 0);
-        doc.text(`${transaction.businessName} NagadiPOS`, 10, y);
+        doc.text(`${transaction.businessName}`, 105, y, { align: 'center' });
+        y += 5;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Cashier: ' + transaction.cashier, 105, y, { align: 'center' });
+        y += 5;
+        doc.text('Date: ' + transaction.date, 105, y, { align: 'center' });
+        y += 5;
+        doc.line(10, y, 200, y);
         y += 5;
 
-        // Date
-        doc.setFontSize(8);
-        doc.setFont('helvetica', 'normal');
-        doc.text(`Date: ${transaction.date}`, 10, y);
-        y += 8;
+        // Itemized List Header
+        doc.setFontSize(9);
+        doc.text('Item', 10, y);
+        doc.text('Qty', 130, y, { align: 'right' });
+        doc.text('Rate', 160, y, { align: 'right' });
+        doc.text('Amount', 190, y, { align: 'right' });
+        y += 2;
+        doc.line(10, y, 200, y);
+        y += 5;
 
         // Items
-        const itemCount = {};
-        transaction.items.forEach(item => {
-            const key = `${item.name} - ${settings.currency}${item.price.toFixed(2)}`;
-            itemCount[key] = (itemCount[key] || 0) + 1;
-        });
-
-        Object.entries(itemCount).forEach(([item, count]) => {
+        Object.entries(itemCount).forEach(([name, { count, price, total }]) => {
             if (y > 280) {
                 doc.addPage();
                 y = 10;
             }
-            const [name, price] = item.split(' - ');
-            const displayText = count > 1 ? `${name} (x${count})` : name;
-            const priceText = count > 1 ? `${price} (x${count})` : price;
-            const maxWidth = 140;
-            const truncatedName = doc.splitTextToSize(displayText, maxWidth)[0];
-            doc.text(truncatedName, 10, y);
-            doc.text(priceText, 190, y, { align: 'right' });
+            const displayText = doc.splitTextToSize(name, 100)[0];
+            doc.text(displayText, 10, y);
+            doc.text(String(count), 130, y, { align: 'right' });
+            doc.text(`${settings.currency}${price.toFixed(2)}`, 160, y, { align: 'right' });
+            doc.text(`${settings.currency}${total.toFixed(2)}`, 190, y, { align: 'right' });
             y += 5;
         });
 
         // Summary
         y += 2;
-        doc.line(10, y, 190, y);
+        doc.line(10, y, 200, y);
         y += 5;
-        doc.setFontSize(9);
-        doc.text(`Total: ${settings.currency}${transaction.total.toFixed(2)}`, 190, y, { align: 'right' });
+        doc.setFontSize(10);
+        doc.text('Total', 160, y, { align: 'right' });
+        doc.text(`${settings.currency}${transaction.total.toFixed(2)}`, 190, y, { align: 'right' });
         y += 5;
-        doc.text(`Paid: ${settings.currency}${transaction.paid.toFixed(2)}`, 190, y, { align: 'right' });
+        doc.text('Paid', 160, y, { align: 'right' });
+        doc.text(`${settings.currency}${transaction.paid.toFixed(2)}`, 190, y, { align: 'right' });
         y += 5;
-        doc.text(`Change: ${settings.currency}${transaction.change.toFixed(2)}`, 190, y, { align: 'right' });
-        y += 10;
+        doc.text('Change', 160, y, { align: 'right' });
+        doc.text(`${settings.currency}${transaction.change.toFixed(2)}`, 190, y, { align: 'right' });
+        y += 5;
+        doc.line(10, y, 200, y);
+        y += 5;
+        doc.setFontSize(8);
+        doc.text('Thank you!', 105, y, { align: 'center' });
+        y += 5;
     });
 
     // Footer
     doc.setFontSize(7);
     doc.setTextColor(100, 100, 100);
-    doc.text('NagadiPOS | Rajat', 10, 292);
-    doc.text('Thank you!', 190, 292, { align: 'right' });
+    doc.text('NagadiPOS by Rajat', 10, 292);
 
-    const rangeText = range === 'last' ? 'Last_Bill' : range.replace(/(\d+)(\w+)/, '$1_$2');
-    doc.save(`NagadiPOS_${rangeText}_${new Date().toLocaleString().replace(/[,:/]/g, '-')}.pdf`);
+    doc.save(`${filename}_${new Date().toLocaleString().replace(/[,:/]/g, '-')}.pdf`);
+}
+
+// Sale Summary Logic
+function getSaleSummary(range) {
+    const now = new Date();
+    let cutoff;
+    const allTransactions = sessions.flatMap(session => session.transactions);
+
+    switch (range) {
+        case 'daily':
+            cutoff = new Date(now.setDate(now.getDate() - 1));
+            break;
+        case 'weekly':
+            cutoff = new Date(now.setDate(now.getDate() - 7));
+            break;
+        default:
+            return { items: {}, total: 0, transactions: 0 };
+    }
+
+    const filteredTransactions = allTransactions.filter(t => new Date(t.date) >= cutoff);
+    const summary = {
+        items: {},
+        total: 0,
+        transactions: filteredTransactions.length
+    };
+
+    filteredTransactions.forEach(transaction => {
+        summary.total += transaction.total;
+        transaction.items.forEach(item => {
+            const key = `${item.name} - ${settings.currency}${item.price.toFixed(2)}`;
+            summary.items[key] = (summary.items[key] || { count: 0, total: 0 });
+            summary.items[key].count += 1;
+            summary.items[key].total += item.price;
+        });
+    });
+
+    return summary;
+}
+
+function viewSaleSummary() {
+    const range = document.getElementById('summary-range').value;
+    const summary = getSaleSummary(range);
+    const summaryList = document.getElementById('summary-list');
+    summaryList.innerHTML = '';
+
+    Object.entries(summary.items).forEach(([item, { count, total }]) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item}</td>
+            <td>${count}</td>
+            <td>${settings.currency}${total.toFixed(2)}</td>
+        `;
+        summaryList.appendChild(tr);
+    });
+
+    document.getElementById('summary-total-amount').textContent = summary.total.toFixed(2);
+    document.getElementById('summary-transactions').textContent = summary.transactions;
+    document.getElementById('summary-total').style.display = 'block';
+}
+
+function exportSaleSummary() {
+    const range = document.getElementById('summary-range').value;
+    const summary = getSaleSummary(range);
+
+    if (Object.keys(summary.items).length === 0) {
+        alert('No sales data for the selected range!');
+        return;
+    }
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+    });
+    let y = 10;
+
+    // Header
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text(`${settings.businessName || 'NagadiPOS'} Sale Summary`, 105, y, { align: 'center' });
+    y += 5;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`${range.charAt(0).toUpperCase() + range.slice(1)} Report`, 105, y, { align: 'center' });
+    y += 5;
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 105, y, { align: 'center' });
+    y += 5;
+    doc.line(10, y, 200, y);
+    y += 5;
+
+    // Summary Table Header
+    doc.setFontSize(9);
+    doc.text('Item', 10, y);
+    doc.text('Qty Sold', 130, y, { align: 'right' });
+    doc.text('Total Amount', 190, y, { align: 'right' });
+    y += 2;
+    doc.line(10, y, 200, y);
+    y += 5;
+
+    // Items
+    Object.entries(summary.items).forEach(([item, { count, total }]) => {
+        if (y > 280) {
+            doc.addPage();
+            y = 10;
+        }
+        const displayText = doc.splitTextToSize(item, 100)[0];
+        doc.text(displayText, 10, y);
+        doc.text(String(count), 130, y, { align: 'right' });
+        doc.text(`${settings.currency}${total.toFixed(2)}`, 190, y, { align: 'right' });
+        y += 5;
+    });
+
+    // Total Summary
+    y += 2;
+    doc.line(10, y, 200, y);
+    y += 5;
+    doc.setFontSize(10);
+    doc.text('Total Sales', 160, y, { align: 'right' });
+    doc.text(`${settings.currency}${summary.total.toFixed(2)}`, 190, y, { align: 'right' });
+    y += 5;
+    doc.text('Transactions', 160, y, { align: 'right' });
+    doc.text(String(summary.transactions), 190, y, { align: 'right' });
+    y += 5;
+    doc.line(10, y, 200, y);
+
+    // Footer
+    doc.setFontSize(7);
+    doc.setTextColor(100, 100, 100);
+    doc.text('NagadiPOS by Rajat', 10, 292);
+
+    doc.save(`NagadiPOS_${range}_Summary_${new Date().toLocaleString().replace(/[,:/]/g, '-')}.pdf`);
 }
